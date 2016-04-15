@@ -1,8 +1,7 @@
 require 'socket'
-
 TIMEOUT = 0.5
-
-AB_DATA_MAX_SIZE = 1024
+PROTOCOLS = { 'ab' => :ab_client, 'gbn' => :gbn_client }
+AB_DATA_MAX_SIZE = 64
 AB_CHUNK_SIZE = 1 + AB_DATA_MAX_SIZE
 AB_PACK_SERVER = "Ca*"
 AB_PACK_CLIENT = 'C'
@@ -13,13 +12,14 @@ def ab_client(socket)
   while true
     begin
       data = socket.recv_nonblock(AB_CHUNK_SIZE)
-      if data == ''
-        STDERR.puts 'File fully transmitted'
-        break
-      end
       server_bit, message = data.unpack(AB_PACK_SERVER)
       last_received = Time.now
       if server_bit != bit
+        if message == ''
+          STDERR.puts '-'*16
+          STDERR.puts 'File fully transmitted'
+          break
+        end
         print message
         bit = server_bit
       else
@@ -32,7 +32,8 @@ def ab_client(socket)
       if Time.now - last_received < TIMEOUT
         retry
       else
-        STDERR.puts('Connection timed out')
+        STDERR.puts '-'*16
+        STDERR.puts 'Connection timed out'
         break
       end
     end
@@ -41,17 +42,33 @@ end
 
 
 host = ARGV[0]
-filename = ARGV[1]
-socket = UDPSocket.new
-socket.send(filename, 0, host, 5024)
-STDERR.puts "Sent request to #{host} for #{filename}"
-data, addr = socket.recvfrom(1)
-result = data.unpack('C').first
+protocol = ARGV[1]
+abort('Unknown protocol') unless PROTOCOLS.keys.include? protocol
+filename = ARGV[2]
 
-if result == 0
+socket = UDPSocket.new
+socket.send("#{protocol} #{filename}", 0, host, 5024)
+STDERR.puts "Sent request to #{host} for #{filename} over #{protocol}"
+
+start_time = Time.now
+
+while start_time + TIMEOUT > Time.now
+  begin
+    data, addr = socket.recvfrom_nonblock(1)
+  rescue
+    # Do nothing
+  end
+end
+
+if addr.nil?
+  abort('Could not connect to server')
+end
+
+if data == ''
   STDERR.puts "#{filename} is not a valid file"
 else
   STDERR.puts "#{filename} is a valid file, being served from #{addr[3]}:#{addr[1]}"
+  STDERR.puts '-'*16
   socket.connect(addr[3], addr[1])
   ab_client(socket)
 end
