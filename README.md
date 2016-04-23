@@ -5,4 +5,4 @@ To start the server
 
 To run the client
 ```ruby udp_client.rb <ip> <protocol> <file>```
-Valid protocols include ab and soon gbn'
+Valid protocols include ab and gbn
