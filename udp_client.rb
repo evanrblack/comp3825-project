@@ -1,6 +1,8 @@
 require 'socket'
-TIMEOUT = 0.5
+TIMEOUT = 1.0
 PROTOCOLS = { 'ab' => :ab_client, 'gbn' => :gbn_client }
+
+
 AB_DATA_MAX_SIZE = 64
 AB_CHUNK_SIZE = 1 + AB_DATA_MAX_SIZE
 AB_PACK_SERVER = "Ca*"
@@ -41,6 +43,42 @@ def ab_client(socket)
 end
 
 
+GBN_DATA_MAX_SIZE = 64
+GBN_CHUNK_SIZE = 4 + GBN_DATA_MAX_SIZE
+GBN_PACK_SERVER = 'La*'
+GBN_PACK_CLIENT = 'L'
+# L == unsigned 32-bit int
+
+def gbn_client(socket)
+  last_received = Time.now
+  req_num = 0
+  while true
+    begin
+      received = socket.recv_nonblock(GBN_CHUNK_SIZE)
+      seq_num, data = received.unpack(GBN_PACK_SERVER)
+      last_received = Time.now
+      if seq_num == req_num
+        if data == ''
+          STDERR.puts '-'*16
+          STDERR.puts 'File fully transmitted'
+          break
+        else
+          print data
+        end
+        req_num += 1
+      end
+      socket.send([req_num].pack(GBN_PACK_CLIENT), 0)
+    rescue
+      if Time.now - last_received > TIMEOUT
+        STDERR.puts '-'*16
+        STDERR.puts 'Connection timed out'
+        break
+      end
+    end
+  end
+  socket.close
+end
+
 host = ARGV[0]
 protocol = ARGV[1]
 abort('Unknown protocol') unless PROTOCOLS.keys.include? protocol
@@ -70,5 +108,5 @@ else
   STDERR.puts "#{filename} is a valid file, being served from #{addr[3]}:#{addr[1]}"
   STDERR.puts '-'*16
   socket.connect(addr[3], addr[1])
-  ab_client(socket)
+  send("#{ARGV[1]}_client", socket)
 end

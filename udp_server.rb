@@ -1,10 +1,13 @@
 require 'socket'
-TIMEOUT = 0.5
+
+TIMEOUT = 1.0
 PROTOCOLS = { 'ab' => :ab_server, 'gbn' => :gbn_server }
+
 AB_DATA_MAX_SIZE = 64
-AB_CHUNK_SIZE = 1 + AB_DATA_MAX_SIZE
+AB_CHUNK_SIZE = 4 + AB_DATA_MAX_SIZE
 AB_PACK_SERVER = "Ca*"
 AB_PACK_CLIENT = 'C'
+
 LOG_LEVEL = ARGV[0].to_i || 0
 
 Thread.abort_on_exception = true
@@ -53,6 +56,71 @@ def ab_server(filename, socket)
     end
     socket.close()
   end
+end
+
+GBN_DATA_MAX_SIZE = 64
+GBN_CHUNK_SIZE = 4 + GBN_DATA_MAX_SIZE
+GBN_PACK_SERVER = 'La*'
+GBN_PACK_CLIENT = 'L'
+GBN_WINDOW_SIZE = 5
+# L == unsigned 32-bit int
+
+def gbn_server(filename, socket)
+  ip, port = socket.remote_address.ip_unpack
+
+  # Break file into an array of strings of length <= GBN_DATA_MAX_SIZE
+  file = []
+  File.open(filename) do |f|
+    while !f.eof?
+      file << f.read(GBN_DATA_MAX_SIZE)
+    end
+  end
+
+  seq_base = 0
+  seq_max = file.length - 1
+  last_received = Time.now
+  while true
+    
+    # Receive
+    begin
+      received = socket.recv_nonblock(4)  # 32 bit number
+      req_num = received.unpack(GBN_PACK_CLIENT).first
+      last_received = Time.now
+      if req_num > seq_base
+        log_puts(ip, port, 1, "Received ACK for #{req_num}/#{seq_max}; moving window up...")
+        seq_base = req_num
+      else
+        log_puts(ip, port, 1, "Received ACK for #{req_num}/#{seq_max}; keeping window at #{seq_base}...")
+      end
+      
+      if seq_base == seq_max
+        log_puts(ip, port, 0, 'Received ACK for EOF; closing socket...')
+        break
+      end
+    rescue
+      if Time.now - last_received > TIMEOUT
+        log_puts(ip, port, 0, 'Timed out...')
+        break
+      end
+    end
+
+    # Send
+    begin
+      GBN_WINDOW_SIZE.times do |n|
+        if (seq_send = seq_base + n) <= seq_max
+          chunk = [seq_send, file[seq_send]].pack(GBN_PACK_SERVER)
+          log_puts(ip, port, 2, "Sending \"#{chunk}\"")
+        else  # we're at the end, send the blank packet
+          chunk = [seq_send, ''].pack(GBN_PACK_SERVER)
+          log_puts(ip, port, 2, 'Sending EOF...')
+        end
+        socket.send(chunk, 0)
+      end
+    rescue
+      # Do nothing
+    end
+  end
+  socket.close
 end
 
 # The main socket blocks waiting for new connections.
