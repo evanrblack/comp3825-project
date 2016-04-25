@@ -1,7 +1,7 @@
 require 'socket'
+
 TIMEOUT = 1.0
 PROTOCOLS = { 'ab' => :ab_client, 'gbn' => :gbn_client }
-
 
 AB_DATA_MAX_SIZE = 64
 AB_CHUNK_SIZE = 1 + AB_DATA_MAX_SIZE
@@ -90,9 +90,13 @@ STDERR.puts "Sent request to #{host} for #{filename} over #{protocol}"
 
 start_time = Time.now
 
-while start_time + TIMEOUT > Time.now
+data = nil
+addr = nil
+
+while Time.now - start_time < TIMEOUT
   begin
     data, addr = socket.recvfrom_nonblock(1)
+    break
   rescue
     # Do nothing
   end

@@ -1,22 +1,22 @@
 require 'socket'
 
+Thread.abort_on_exception = true
+
 TIMEOUT = 1.0
 PROTOCOLS = { 'ab' => :ab_server, 'gbn' => :gbn_server }
 
-AB_DATA_MAX_SIZE = 64
-AB_CHUNK_SIZE = 4 + AB_DATA_MAX_SIZE
-AB_PACK_SERVER = "Ca*"
-AB_PACK_CLIENT = 'C'
-
 LOG_LEVEL = ARGV[0].to_i || 0
-
-Thread.abort_on_exception = true
 
 def log_puts(ip, port, level, message)
   if level <= LOG_LEVEL
     puts "#{Time.now.utc.strftime("%Y-%m-%d %H:%M:%S")}|#{ip}:#{port}|#{message}"
   end
 end
+
+AB_DATA_MAX_SIZE = 64
+AB_CHUNK_SIZE = 1 + AB_DATA_MAX_SIZE
+AB_PACK_SERVER = "Ca*"
+AB_PACK_CLIENT = 'C'
 
 def ab_server(filename, socket)
   ip, port = socket.remote_address.ip_unpack
